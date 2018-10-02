@@ -71,6 +71,7 @@ void setLeds(unsigned char state);
 
 void configDisplay(void);
 void BuzzerOn(void);
+void BuzzerSetPwm(unsigned char pwm);
 void BuzzerOff(void);
 
 void configKeypad(void);

@@ -169,7 +169,7 @@ inline void initialize_tm(struct tm * time_ptr)
 {
     const int mon_days[] =
           {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    unsigned long rawtime = 8569460;
+    unsigned long rawtime = 3298882;
     time_ptr->tm_yday = rawtime / 86400;
     rawtime -= time_ptr->tm_yday * 86400;
     time_ptr->tm_hour = rawtime / 3600;

@@ -4,8 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-typedef enum {S_RUN, S_EDIT} state_t;
-typedef enum {E_MON, E_DAY, E_HR, E_MIN, E_SEC} editstate_t;
+typedef enum {B_START, B_CHANGE} state_b;
 
 // Function Prototypes
 void swDelay(char numLoops);
@@ -14,9 +13,7 @@ void runtimerA2(void);
 void stoptimerA2(void);
 void a2delay(float numLoops);
 void toArray(int i, char *s);
-char displayTemp(float rawTemp, int tempType);
 int read_push_button(void);
-//void displayStuff(int count);
 
 // Declare globals here
 
@@ -28,8 +25,8 @@ struct tm * last_global_time; //Global time counter.
 volatile unsigned int in_temp;
 volatile unsigned int in_wheel;
 volatile char temp_changed = 0;
-unsigned long times[60];
-float tempC[60];
+unsigned long times[256];
+float tempC[256];
 unsigned int timercount;
 unsigned int delay_cnt = 0;
 char* time_str;
@@ -38,6 +35,9 @@ char* date_str;
 char* temp_c_str;
 char* temp_f_str;
 unsigned long utc;
+short temp_hist[4];
+unsigned int temp_index = 0;
+int temp_avg = 0;
 
 #pragma vector=TIMER2_A0_VECTOR
 __interrupt void TimerA2_ISR(void) {
@@ -56,7 +56,9 @@ __interrupt void TimerA2_ISR(void) {
 __interrupt void ADC12_ISR(void) {
     in_temp = ADC12MEM0;
     in_wheel = ADC12MEM1;
+    temp_hist[temp_index] = in_temp;
     temp_changed = 1;
+    temp_index = (temp_index + 1) % 4 ;
 }
 
 
@@ -103,8 +105,7 @@ void main(void) {
 
     Graphics_clearDisplay(&g_sContext); // Clear the display
 
-    state_t state = S_RUN;
-    editstate_t editstate = E_MON;
+    state_b state = B_START;
 
     time_str = (char*)malloc(sizeof(char) * 9);
     last_time_str = (char*)malloc(sizeof(char) * 9);
@@ -116,64 +117,45 @@ void main(void) {
     convert_date(date_str, global_time);
 
     volatile int btn;
-    const int mon_days[] =
-          {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
     while(1) {
         btn = getKey();
 
-        switch (state)
-                {
-                case S_RUN:
-                    if (btn == '1') {
-                        stoptimerA2();
-                        state = S_EDIT;
-                    }
-                    break;
-                case S_EDIT:
-                    if (btn == '2') {
-                        runtimerA2();
-                        state = S_RUN;
-                        editstate = E_MON;
-                        mktime(global_time);
-                        break;
-                    }
-                    adc_convert();
-                    switch (editstate) {
-                    case E_MON:
-                        if (btn == '1')
-                            editstate = E_DAY;
-                        global_time->tm_mon = map(in_wheel, 0, 4085, 0, 11);
-                        break;
-                    case E_DAY:
-                        if (btn == '1')
-                            editstate = E_HR;
-                        global_time->tm_mday = map(in_wheel, 0, 4085, 1, mon_days[global_time->tm_mon]);
-                        break;
-                    case E_HR:
-                        if (btn == '1')
-                            editstate = E_MIN;
-                        global_time->tm_hour = map(in_wheel, 0, 4085, 0, 23);
-                        break;
-                    case E_MIN:
-                        if (btn == '1')
-                            editstate = E_SEC;
-                        global_time->tm_min = map(in_wheel, 0, 4085, 0, 59);
-                        break;
-                    case E_SEC:
-                        if (btn == '1')
-                            editstate = E_MON;
-                        global_time->tm_sec = map(in_wheel, 0, 4085, 0, 59);
-                        break;
-                    }
+        switch (state) {
+            case B_START:
+                if (btn == '1') {
+                    BuzzerOn();
+                    state = B_CHANGE;
+                }
+                break;
+            case B_CHANGE:
+                if (btn == '2') {
+                    BuzzerOff();
+                    state = B_START;
                     break;
                 }
+                adc_convert();
+                BuzzerSetPwm(map(in_wheel, 0, 4085, 0, 256));
+                break;
+            }
 
         if (temp_changed) {
-            temperatureDegC = (float) ((long) in_temp - CALADC12_15V_30C )
+            unsigned int i;
+            for (i=0; i<4; i++) {
+              temp_avg += temp_hist[i] ;
+            }
+            temp_avg = temp_avg >> 2 ;  // divide by 4 by right shifting 2
+
+            temperatureDegC = (float) ((long) temp_avg - CALADC12_15V_30C )
                     * degC_per_bit + 30.0;
             temperatureDegF = temperatureDegC * 9.0 / 5.0 + 32.0;
             temp_changed = 0;
+        }
+
+        if (global_time->tm_min % 60 == 0) {
+            BuzzerOn();
+            swDelay(5000);
+            BuzzerOff();
         }
 
         convert_temp(temp_c_str, temperatureDegC, 0);
@@ -182,8 +164,8 @@ void main(void) {
         convert_date(date_str, global_time);
         utc = mktime(global_time);
 
-        times[utc % 60] = utc;
-        tempC[utc % 60] = temperatureDegC;
+        times[utc % 256] = utc;
+        tempC[utc % 256] = temperatureDegC;
 
 //        if (global_time->tm_sec != last_global_time->tm_sec) {
             Graphics_clearDisplay(&g_sContext);
@@ -195,70 +177,6 @@ void main(void) {
 //            last_global_time->tm_sec = global_time->tm_sec;
 //        }
     }
-}
-
-//void displayStuff(int count) {
-//    int monthDays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-//    char month[12][4] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
-//    int days = count/86400;
-//    int hours = (count%86400)/3600;
-//    int minutes = ((count%86400)%3600)/60;
-//    int seconds = (((count%86400)%3600)%60);
-//
-//    int months = 0;
-//    int totalDayMonths = 0;
-//    int tempTotalDayMonths = 31;
-//    int i = 0;
-//    while(tempTotalDayMonths < days) {
-//        totalDayMonths += monthDays[i];
-//        tempTotalDayMonths += monthDays[i+1];
-//        months++;
-//        i++;
-//    }
-//
-//    char *sDays[4];
-//    char *sHours[4];
-//    char *sMin[4];
-//    char *sSec[4];
-//
-//    toArray(days, sDays);
-//    toArray(hours, sHours);
-//    toArray(minutes, sMin);
-//    toArray(seconds, sSec);
-//
-//    days -= totalDayMonths;
-//
-//    char disp[9][5];
-//    disp[0] = month[months];
-//    disp[1] = ':';
-//    disp[2] = sDays;
-//    disp[3] = ':';
-//    disp[4] = sHours;
-//    disp[5] = ':';
-//    disp[6] = sMin;
-//    disp[7] = ':';
-//    disp[8] = sSec;
-//
-//    Graphics_clearDisplay(&g_sContext);
-//    Graphics_drawStringCentered(&g_sContext, disp, AUTO_STRING_LENGTH, 48, 15, TRANSPARENT_TEXT);
-//    Graphics_flushBuffer(&g_sContext); // update display
-//}
-
-void toArray(int i,char *s) { // Convert Integer to String
-    char *p;
-    p = s;
-    p[2]=i%10;
-    i-=p[2];
-    i/=10;
-    p[1]=i%10;
-    i-=p[1];
-    i/=10;
-    p[0]=i%10;
-    i-=p[0];
-    p[3] = 0; // mark end of string
-    p[2]+=0x30;
-    p[1]+=0x30;
-    p[0]+=0x30;
 }
 
 

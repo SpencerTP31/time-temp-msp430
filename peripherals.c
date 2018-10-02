@@ -90,6 +90,10 @@ void BuzzerOn(void)
     TB0CCR5   = TB0CCR0/2;                  // Configure a 50% duty cycle
 }
 
+void BuzzerSetPwm(unsigned char pwm) {
+    TB0CCR0 = pwm;
+}
+
 /*
  * Disable the buzzer on P7.5
  */
