@@ -35,9 +35,9 @@ char* date_str;
 char* temp_c_str;
 char* temp_f_str;
 unsigned long utc;
-short temp_hist[4];
-unsigned int temp_index = 0;
-int temp_avg = 0;
+volatile unsigned int temp_hist[4];
+volatile unsigned int temp_index = 0;
+volatile unsigned int temp_avg = 0;
 
 #pragma vector=TIMER2_A0_VECTOR
 __interrupt void TimerA2_ISR(void) {
@@ -58,7 +58,7 @@ __interrupt void ADC12_ISR(void) {
     in_wheel = ADC12MEM1;
     temp_hist[temp_index] = in_temp;
     temp_changed = 1;
-    temp_index = (temp_index + 1) % 4 ;
+    temp_index = (temp_index + 1) % 4;
 }
 
 
@@ -83,7 +83,7 @@ void main(void) {
     ADC12CTL1 = ADC12SHP | ADC12CONSEQ_1;                     // Enable sample timer
     // Using ADC12MEM0 to store reading
     ADC12MCTL0 = ADC12SREF_1 + ADC12INCH_10;  // ADC i/p ch A10 = temp sense
-    ADC12MCTL1 = ADC12SREF_0 + ADC12INCH_5 + ADC12EOS;
+    ADC12MCTL1 = ADC12SREF_0 + ADC12INCH_0 + ADC12EOS;
 
     __delay_cycles(100);                    // delay to allow Ref to settle
     ADC12CTL0 |= ADC12ENC;                // Enable conversion
@@ -135,16 +135,19 @@ void main(void) {
                     break;
                 }
                 adc_convert();
-                BuzzerSetPwm(map(in_wheel, 0, 4085, 0, 256));
+                long mapped = map(in_wheel, 0, 4095, 0, 256);
+                BuzzerSetPwm(mapped);
+//                BuzzerSetPwm(200);
                 break;
             }
 
         if (temp_changed) {
             unsigned int i;
+            temp_avg = 0;
             for (i=0; i<4; i++) {
-              temp_avg += temp_hist[i] ;
+              temp_avg += temp_hist[i];
             }
-            temp_avg = temp_avg >> 2 ;  // divide by 4 by right shifting 2
+            temp_avg /= 4 ;  // divide by 4 by right shifting 2
 
             temperatureDegC = (float) ((long) temp_avg - CALADC12_15V_30C )
                     * degC_per_bit + 30.0;
@@ -168,11 +171,11 @@ void main(void) {
         tempC[utc % 256] = temperatureDegC;
 
 //        if (global_time->tm_sec != last_global_time->tm_sec) {
-            Graphics_clearDisplay(&g_sContext);
-            Graphics_drawStringCentered(&g_sContext, time_str, AUTO_STRING_LENGTH, 51, 10, TRANSPARENT_TEXT);
-            Graphics_drawStringCentered(&g_sContext, date_str, AUTO_STRING_LENGTH, 51, 20, TRANSPARENT_TEXT);
-            Graphics_drawStringCentered(&g_sContext, temp_c_str, AUTO_STRING_LENGTH, 51, 30, TRANSPARENT_TEXT);
-            Graphics_drawStringCentered(&g_sContext, temp_f_str, AUTO_STRING_LENGTH, 51, 40, TRANSPARENT_TEXT);
+//            Graphics_clearDisplay(&g_sContext);
+            Graphics_drawStringCentered(&g_sContext, time_str, AUTO_STRING_LENGTH, 51, 10, OPAQUE_TEXT);
+            Graphics_drawStringCentered(&g_sContext, date_str, AUTO_STRING_LENGTH, 51, 20, OPAQUE_TEXT);
+            Graphics_drawStringCentered(&g_sContext, temp_c_str, AUTO_STRING_LENGTH, 51, 30, OPAQUE_TEXT);
+            Graphics_drawStringCentered(&g_sContext, temp_f_str, AUTO_STRING_LENGTH, 51, 40, OPAQUE_TEXT);
             Graphics_flushBuffer(&g_sContext); // update display
 //            last_global_time->tm_sec = global_time->tm_sec;
 //        }
