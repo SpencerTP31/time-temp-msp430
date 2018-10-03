@@ -155,7 +155,7 @@ void main(void) {
             temp_changed = 0;
         }
 
-        if (global_time->tm_min % 60 == 0) {
+        if (global_time->tm_min == 0) {
             BuzzerOn();
             swDelay(5000);
             BuzzerOff();
